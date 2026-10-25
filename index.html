@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner QR - Wi-Fi</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --accent:#0077cc; --accent2:#5060d0; --text:#111827; --muted:#4b5563; --glass:rgba(255,255,255,.92); --line:rgba(0,0,0,.12); }
+  * { box-sizing:border-box; }
+  html, body { margin:0; min-height:100vh; font-family:'Outfit',system-ui,sans-serif; color:var(--text);
+    background:#f0f4f8; }
+  body { display:flex; justify-content:center; padding:24px 16px; }
+  .box { width:100%; max-width:420px; background:var(--glass); border:1px solid var(--line); border-radius:20px;
+    padding:20px; box-shadow:0 2px 14px rgba(0,0,0,.08); }
+  h1 { font-size:20px; margin:0 0 6px; color:var(--accent); letter-spacing:.04em; }
+  p { margin:6px 0 14px; color:var(--muted); }
+  #video-wrap { position:relative; width:100%; aspect-ratio:1/1; overflow:hidden; border-radius:16px; background:#000; }
+  video { width:100%; height:100%; object-fit:cover; }
+  .frame { position:absolute; inset:15%; border:3px solid var(--accent); border-radius:14px; box-shadow:0 0 0 999px rgba(0,0,0,.25); }
+  button { width:100%; margin-top:14px; padding:12px; border:0; border-radius:50px; font:inherit; font-weight:600; cursor:pointer;
+    background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  #result { margin-top:14px; padding:12px; border-radius:14px; background:rgba(0,119,204,.08); word-break:break-all; display:none; }
+  #msg { color:#b42318; margin-top:10px; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Scanner le ticket</h1>
+  <p>Placez le QR code de votre ticket dans le cadre. La connexion se fait automatiquement.</p>
+
+  <div id="video-wrap">
+    <video id="video" playsinline muted></video>
+    <div class="frame"></div>
+  </div>
+
+  <button id="start">Démarrer la caméra</button>
+  <button id="switch" class="ghost" hidden>Changer de caméra</button>
+  <div id="msg"></div>
+  <div id="result"></div>
+</div>
+
+<canvas id="canvas" hidden></canvas>
+<!-- Lecture des QR codes : bibliothèque jsQR, version fixe -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+(function () {
+  var video = document.getElementById('video');
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d', { willReadFrequently: true });
+  var msg = document.getElementById('msg');
+  var result = document.getElementById('result');
+  var switchBtn = document.getElementById('switch');
+  var stream = null, running = false, facing = 'environment', cameras = [], camIndex = 0;
+
+  function say(t) { msg.textContent = t || ''; }
+
+  function stop() {
+    running = false;
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+  }
+
+  function start() {
+    stop();
+    say('');
+    var constraints = { audio: false, video: { facingMode: { ideal: facing } } };
+    navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      video.setAttribute('playsinline', true);
+      return video.play();
+    }).then(function () {
+      running = true;
+      switchBtn.hidden = false;
+      tick();
+    }).catch(function (e) {
+      say('Caméra inaccessible : autorisez l’accès à la caméra dans le navigateur. (' + (e && e.name ? e.name : 'erreur') + ')');
+    });
+  }
+
+  function tick() {
+    if (!running) return;
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      if (code && code.data) { found(code.data); return; }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function found(text) {
+    stop();
+    result.style.display = 'block';
+    result.textContent = 'Ticket lu, connexion en cours…';
+    // Le QR de Mikhmon contient l'adresse de connexion : on l'ouvre directement
+    if (/^https?:\/\//i.test(text)) {
+      window.location.href = text;
+    } else {
+      result.textContent = text;
+    }
+  }
+
+  // Bascule entre caméra arrière et avant (si le téléphone en a plusieurs)
+  switchBtn.addEventListener('click', function () {
+    facing = facing === 'environment' ? 'user' : 'environment';
+    start();
+  });
+
+  document.getElementById('start').addEventListener('click', function () {
+    this.hidden = true;
+    start();
+  });
+})();
+</script>
+</body>
+</html>
