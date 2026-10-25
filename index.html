@@ -43,7 +43,7 @@
 
 <canvas id="canvas" hidden></canvas>
 <!-- Lecture des QR codes : bibliothèque jsQR, version fixe -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js" async></script>
 <script>
 (function () {
   var video = document.getElementById('video');
@@ -52,7 +52,9 @@
   var msg = document.getElementById('msg');
   var result = document.getElementById('result');
   var switchBtn = document.getElementById('switch');
-  var stream = null, running = false, facing = 'environment', cameras = [], camIndex = 0;
+  var stream = null, running = false, facing = 'environment';
+  // Lecteur natif du navigateur (Chrome Android) : aucun téléchargement externe nécessaire
+  var detector = ('BarcodeDetector' in window) ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
 
   function say(t) { msg.textContent = t || ''; }
 
@@ -81,14 +83,27 @@
 
   function tick() {
     if (!running) return;
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-      if (code && code.data) { found(code.data); return; }
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      requestAnimationFrame(tick);
+      return;
     }
+    if (detector) {
+      detector.detect(video).then(function (codes) {
+        if (codes.length && codes[0].rawValue) { found(codes[0].rawValue); return; }
+        if (running) requestAnimationFrame(tick);
+      }).catch(function () { if (running) requestAnimationFrame(tick); });
+      return;
+    }
+    if (typeof jsQR !== 'function') {
+      say('Lecteur QR indisponible dans ce navigateur. Essayez Chrome, ou l\u2019appareil photo du téléphone.');
+      return;
+    }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+    if (code && code.data) { found(code.data); return; }
     requestAnimationFrame(tick);
   }
 
